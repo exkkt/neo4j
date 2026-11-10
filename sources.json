@@ -1,0 +1,18 @@
+{
+  "source": "https://sabr.org/lahman-database/",
+  "version": "2025 (SABR release 2026-01-02; CSV BOM update 2026-02-18)",
+  "files": {
+    "People": {
+      "file_id": "2084263017537",
+      "sha256": "9ee97110fc88b2c4ad72684577d696875035049e74a45cb93238458df8563c58"
+    },
+    "Teams": {
+      "file_id": "2084266946255",
+      "sha256": "0e7afdd8b837d0edaca770a28817eec6613bd8255979c1be6e3f5827f4b88fd6"
+    },
+    "Appearances": {
+      "file_id": "2084267195632",
+      "sha256": "4aa1883276a86b9b8ceaa08b3d030044d187766fb758fc973ec12d3a24f6fe08"
+    }
+  }
+}

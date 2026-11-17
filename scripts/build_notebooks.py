@@ -67,37 +67,80 @@ def connection():
         "Colab左側の鍵アイコン（シークレット）に `NEO4J_URI`・`NEO4J_USERNAME`・"
         "`NEO4J_PASSWORD` を登録し、このノートブックからのアクセスを許可します。"
         "登録がない場合は非表示入力を使います。値をコードや出力に書きません。\n\n"
+        "接続失敗時は `[AUTH]`（認証）、`[UNREACHABLE]`（到達不能）、"
+        "`[SECRET_ACCESS]`（シークレットのアクセス許可）などの案内に従ってください。"
+        "DB名は `DATABASE = None` として接続ユーザーの既定DBを使います。\n\n"
         "接続先は学習用DBにしてください。次の取り込みセルはノード・制約を追加します。"
         "既存データの削除は行いません。"),
         code('''from getpass import getpass
+from urllib.parse import urlsplit
 from neo4j import GraphDatabase
+from neo4j.exceptions import AuthError, ServiceUnavailable, SessionExpired, ConfigurationError
 import logging
 logging.getLogger("neo4j").setLevel(logging.CRITICAL)
 
 def hidden_setting(name):
     try:
         from google.colab import userdata
-        return userdata.get(name)
-    except Exception:
-        return getpass(f"{name} (hidden): ")
+    except ImportError:
+        value = getpass(f"{name} (hidden): ")
+    else:
+        try:
+            value = userdata.get(name)
+        except userdata.SecretNotFoundError:
+            value = getpass(f"{name} (hidden): ")
+        except userdata.NotebookAccessError:
+            raise RuntimeError(f"[SECRET_ACCESS] Colab左の鍵アイコンで {name} のノートブックアクセスを許可してください。") from None
+        except Exception:
+            raise RuntimeError("[SECRET_READ] Colabシークレットを取得できません。鍵アイコンの設定を確認して再実行してください。") from None
+    if not isinstance(value, str) or not value.strip():
+        raise RuntimeError(f"[EMPTY_SETTING] {name} が空です。Colabシークレットに登録してください。") from None
+    return value if name == "NEO4J_PASSWORD" else value.strip()
 
-DATABASE = "neo4j"
+def safe_neo4j_error(error):
+    # Exception text, URI and credential values are never included in output.
+    code = getattr(error, "code", None)
+    if isinstance(error, AuthError) or code == "Neo.ClientError.Security.Unauthorized":
+        return "[AUTH] 認証に失敗しました。同じAuraインスタンスのURI・ユーザー名・DBパスワードを登録してください。Auraログイン用パスワードとは別です。"
+    if code == "Neo.ClientError.Database.DatabaseNotFound":
+        return "[DATABASE] 対象DBが見つかりません。DATABASE = None に戻すか、管理画面で実際のDB名を確認してください。"
+    if code == "Neo.ClientError.Security.Forbidden":
+        return "[PERMISSION] この操作の権限がありません。接続ユーザーの読み書き権限を確認してください。"
+    if isinstance(error, (ServiceUnavailable, SessionExpired)):
+        return "[UNREACHABLE] DBに到達できません。Auraでインスタンスの稼働状態を確認し、停止中なら再開してください。稼働中ならConnection URIとネットワークを確認し、再実行してください。"
+    if isinstance(error, (ConfigurationError, ValueError)):
+        return "[CONFIG] 接続設定を確認してください。NEO4J_URIには管理画面のConnection URIを使用します。Auraコンソールのhttps URLは使えません。"
+    return "[NEO4J_OTHER] Neo4jの処理に失敗しました。DBの状態・接続設定・権限・容量を確認してください。生の例外はシークレット保護のため表示しません。"
+
+# Use the user's default database; do not assume its name is 'neo4j'.
+DATABASE = None
+
 def connect_hidden():
+    uri = hidden_setting("NEO4J_URI")
+    username = hidden_setting("NEO4J_USERNAME")
+    password = hidden_setting("NEO4J_PASSWORD")
     driver = None
     try:
-        uri = hidden_setting("NEO4J_URI")
-        username = hidden_setting("NEO4J_USERNAME")
-        password = hidden_setting("NEO4J_PASSWORD")
-        driver = GraphDatabase.driver(uri, auth=(username, password))
+        parsed = urlsplit(uri)
+        if parsed.scheme not in {"neo4j", "neo4j+s", "neo4j+ssc", "bolt", "bolt+s", "bolt+ssc"} or not parsed.hostname:
+            raise ValueError()
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError()
+        driver = GraphDatabase.driver(uri, auth=(username, password), connection_timeout=15)
         driver.verify_connectivity()
+        with driver.session(database=DATABASE) as session:
+            session.run("RETURN 1 AS ok").consume()
         return driver
-    except Exception:
+    except Exception as error:
         if driver is not None:
-            driver.close()
-        raise RuntimeError("接続できません。DBの稼働状態とColabシークレットを確認してください。") from None
+            try:
+                driver.close()
+            except Exception:
+                pass
+        raise RuntimeError(safe_neo4j_error(error)) from None
 
 driver = connect_hidden()
-print("Neo4j connected")''', "needs_neo4j"),
+print("Neo4j connected（DBの読み取り確認済み）")''', "needs_neo4j"),
         md("## データを取り込む\n"
            "`Player → TeamSeason` の二部グラフ。年度・リーグ・球団を一緒にキーにします。"
            "同じデータの再実行では `MERGE` により重複しません。"
@@ -105,8 +148,8 @@ print("Neo4j connected")''', "needs_neo4j"),
         code('''# パスワード等が例外の詳細に出ないよう、生の接続例外は表示しません。
 try:
     counts = import_graph(driver, data, database=DATABASE)
-except Exception:
-    raise RuntimeError("取り込みに失敗しました。接続・権限・DB容量を確認して再実行してください。") from None
+except Exception as error:
+    raise RuntimeError(safe_neo4j_error(error)) from None
 display(pd.DataFrame([counts]))''', "needs_neo4j")]
 
 

@@ -22,9 +22,24 @@ PCにデータを保存する必要はありません。Colabから公式Boxの�
 無料枠にはデータ量などの[利用上限](https://neo4j.com/docs/aura/quotas-and-limits/)があります。72時間利用がないとDBは自動停止し、停止したまま30日を超えるとDBとデータが削除されます。停止後は削除される前に再開できます。削除された場合は、ノートブックでデータを再取得・取り込みできます。[停止と再開の詳細](https://neo4j.com/docs/aura/managing-instances/instance-actions/)
 
 本プロジェクトはローカルのNeo4jとColabからのAura接続で動作を確認しました。Auraは別のDBなので、Colabから使うにはAuraに接続してデータを取り込む必要があります。
-Colab左側のシークレットに `NEO4J_URI`・`NEO4J_USERNAME`・`NEO4J_PASSWORD` を登録し、ノートブックからのアクセスを許可してください。
-値はコードやセル出力に残しません。シークレットが利用できない場合は非表示入力に切り替わります。
-DBの作成・課金操作はこのリポジトリからは行いません。
+
+### 初回の接続設定
+
+1. [Aura Console](https://console.neo4j.io/) の **Instances** を開きます。DBがまだなければ、**Create instance** から **AuraDB Free** を選び、作成時に接続情報ファイルをダウンロードして手元の安全な場所に保存します。作成時に生成されたパスワードは後から再表示できません。既存のDBを使う場合は、そのDBの接続情報を用意します。
+2. Colabで02または03を開き、左側の **鍵アイコン（シークレット）→ 新しいシークレットを追加（Add new secret）** を選びます。下の表どおり、名前と値を1件ずつ、計3件登録します。
+
+| Colabの名前（Name） | 登録する値（Value） |
+|---|---|
+| `NEO4J_URI` | 対象DBの **Connection URI**。作成時のファイルか、Auraの **Instances → 対象DBの … → Inspect** で確認できます。Auraでは `neo4j+s://` から始まります。 |
+| `NEO4J_USERNAME` | DB作成時に表示された **Username**。初期ユーザーは通常 `neo4j` です。 |
+| `NEO4J_PASSWORD` | DB作成時に表示された **Password**。AuraのWebサイトにログインするときのパスワードとは別です。 |
+
+3. 3件すべての **ノートブックへのアクセス（Notebook access）** をオンにします。02と03を両方使う場合は、もう一方でも同じ3件へのアクセスを許可します。
+4. DBが `RUNNING` になったら、Colabの **「Neo4jに接続する」** セルまで順番に実行します。`Neo4j connected` が表示されたら接続できています。
+
+接続情報はColabのシークレット欄に貼り付け、コードや出力には書きません。接続情報ファイルもGitHubにアップロードしないでください。
+
+[AuraのDB作成手順](https://neo4j.com/docs/aura/getting-started/create-instance/) · [接続情報の確認方法](https://neo4j.com/docs/aura/connecting-applications/overview/)
 
 02・03は `DATABASE = None` で接続ユーザーのデフォルトDBを使い、接続時に読み取りも確認します。接続失敗時はシークレットを表示せず、`[AUTH]`（認証）、`[UNREACHABLE]`（到達不能）、`[SECRET_ACCESS]`（Colabシークレットへのアクセス許可）など原因別の案内を表示します。`[UNREACHABLE]` の場合はAuraの稼働状態とConnection URIを確認してください。
 

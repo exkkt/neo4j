@@ -2,7 +2,7 @@
 
 MLBの選手を「同じ年度・同じ球団に出場した」という関係でつなぎ、Neo4jとSQLiteで検索する学習プロジェクトです。
 
-データ取得から再実行できるColabノートブック、グラフの設計、検索結果の一致検証、比較実験を公開します。
+データ取得から再実行できるColabノートブック、グラフの設計、SQLとCypherの書き方の比較、検索結果の一致検証を公開します。
 学習メモと考察の欄は、実行して理解した内容を自分の言葉で追記するためのものです。
 
 ## Colabで始める
@@ -11,7 +11,7 @@ MLBの選手を「同じ年度・同じ球団に出場した」という関係�
 |---|---|---|
 | 01 | 公式CSVを取得、前処理、大谷翔平の所属履歴、図を表示。Neo4jアカウント不要 | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/exkkt/neo4j/blob/main/notebooks/01_data_preparation.ipynb) |
 | 02 | Neo4jへ登録、直接のつながり・2段階のつながりを検索 | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/exkkt/neo4j/blob/main/notebooks/02_neo4j_analysis.ipynb) |
-| 03 | 同じ答えが返ることを確認し、SQLiteとNeo4jの時間・書き方を比較 | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/exkkt/neo4j/blob/main/notebooks/03_sql_comparison.ipynb) |
+| 03 | SQLとCypherを読み比べ、1段階・2段階の検索結果が一致するか確認 | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/exkkt/neo4j/blob/main/notebooks/03_sql_comparison.ipynb) |
 
 各ノートブックは単独で動きます。CPUランタイムを選び、上から順に実行してください。
 PCにデータを保存する必要はありません。Colabから公式Boxの必要なCSVだけを取得します。
@@ -27,6 +27,16 @@ Colab左側のシークレットに `NEO4J_URI`・`NEO4J_USERNAME`・`NEO4J_PASS
 DBの作成・課金操作はこのリポジトリからは行いません。
 
 02・03は `DATABASE = None` で接続ユーザーのデフォルトDBを使い、接続時に読み取りも確認します。接続失敗時はシークレットを表示せず、`[AUTH]`（認証）、`[UNREACHABLE]`（到達不能）、`[SECRET_ACCESS]`（Colabシークレットへのアクセス許可）など原因別の案内を表示します。`[UNREACHABLE]` の場合はAuraの稼働状態とConnection URIを確認してください。
+
+### 2回目以降に実行する前に
+
+AuraDB Freeは72時間使わないと自動停止します。02・03を再実行する前に、[Aura Console](https://console.neo4j.io/) の **Instances** で対象DBの状態を確認してください。
+
+1. `PAUSED` の場合は、DBカード右上の **… → Resume Instance** を選び、確認画面が出たら確定します。
+2. `RUNNING` になったら、Colabで「Neo4jに接続する」セルを実行します。すでに `RUNNING` なら、そのまま接続できます。
+3. `Neo4j connected` が表示されたら、「データを取り込む」から続けます。
+
+[Neo4j Aura公式の再開手順](https://neo4j.com/docs/aura/managing-instances/instance-actions/#_resume_a_paused_instance)
 
 GitHubへ自分の変更を保存する場合は、Colabの **ファイル → GitHubにコピーを保存** を使います。
 実行環境のCSVや画像は、この操作ではアップロードされません。
@@ -72,19 +82,6 @@ graph LR
 
 ノートブック02では、302人のうちトラウト・ベッツ・フリーマンを優先し、残りを選手ID順に選んだ20人について、選手と球団・年度のつながりを図示しています。
 
-### 実行時間の観測例
-
-同じデータ・同じ検索条件で、ウォームアップ後に5回測った中央値です。
-
-| 検索 | SQLite（Colab内メモリ） | Neo4j Aura（リモート） | 一致した結果件数 |
-|---|---:|---:|---:|
-| 1段階 | 0.84 ms | 341.98 ms | 302 |
-| 2段階 | 179.23 ms | 1,861.80 ms | 3,700 |
-
-今回の観測ではSQLiteの時間が短くなりました。一方、Neo4jの測定にはネットワーク通信が含まれ、実行環境も異なります。
-これは異なる構成での1回の実験であり、DBエンジン自体の優劣を示すものではありません。
-次は両DBを同じ環境に置き、年度範囲・選手・キャッシュ条件を変えて比較する予定です。
-
 ## データと再現性
 
 出典: [SABR Lahman Baseball Database](https://sabr.org/lahman-database/)
@@ -99,16 +96,10 @@ graph LR
 公式ファイルが更新されてチェックサムが変わった場合は、バージョン・列・利用条件を確認した上で `sources.json` とノートブックを更新してください。
 自動で別ミラーへ切り替えることはありません。
 
-## 比較実験の読み方
+## 03で比較すること
 
-03は、**ローカルのインメモリSQLiteとリモートNeo4jへのアクセス**を測定します。
-入力データ、選手、段数、重複除去、並び順をそろえ、結果一致を確認してから測ります。
-1回のウォームアップ後に5回測定し、中央値・最小・最大を記録します。結果全件の取得と通信を含みます。
-両DBに検索用インデックスを作ります。キャッシュは初期化しません。
-
-ネットワーク・マシン構成・インメモリ/サーバーの差を含むため、**Neo4jとSQLiteのエンジン単体の優劣は結論できません**。
-結果は `outputs/comparison.csv`、環境と条件は `outputs/environment.json` に保存します。
-DBのホスト名・認証情報は保存しません。
+SQLでは `JOIN` で球団・年度IDが共通する行を結び、Cypherでは `MATCH` で選手と球団・年度を結ぶパターンを書きます。
+同じデータ・起点・検索条件で両方を実行し、1段階と最短2段階のそれぞれで、件数と選手ID一覧の一致を表で確認します。
 
 ## ローカル開発
 
@@ -136,13 +127,13 @@ python -m pytest -q
 
 1. 01で好きな選手を選び、所属履歴と図を読み、データの制約をメモする。
 2. 02でCypherを読み、条件を変えて結果を確かめる。
-3. 03で結果一致と時間を確認し、条件が変わると何が変わるか考察する。
+3. 03でSQLの結合とCypherのパターンを読み比べ、選手ID一覧の一致を確認する。
 4. READMEに「目的・設計理由・実行結果・限界・次の実験」を追記する。
 
 ## 検証状況
 
-自動テスト14件、公式データでの前処理、ローカルNeo4jへの取り込み、SQLとの結果一致を確認しました。
-ColabからNeo4j Auraへの接続と02・03の実行結果も確認しました。
+自動テスト、公式データでの前処理、ローカルNeo4jへの取り込み、SQLとの結果一致を確認しました。
+ColabからNeo4j Auraへの接続と、1段階・2段階の検索結果が一致することを確認しました。
 実測件数・環境・検証範囲は [検証記録](docs/verification.md) を参照してください。
 
 ## 参考資料

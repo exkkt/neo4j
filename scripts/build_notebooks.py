@@ -70,6 +70,14 @@ def connection():
         "接続失敗時は `[AUTH]`（認証）、`[UNREACHABLE]`（到達不能）、"
         "`[SECRET_ACCESS]`（シークレットのアクセス許可）などの案内に従ってください。"
         "DB名は `DATABASE = None` として接続ユーザーの既定DBを使います。\n\n"
+        "### 2回目以降に開くとき\n"
+        "AuraDB Freeは72時間使わないと自動停止します。02・03を再実行する前に、"
+        "[Aura Console](https://console.neo4j.io/)の **Instances** で対象DBの状態を確認してください。\n\n"
+        "1. `PAUSED` の場合は、DBカード右上の **… → Resume Instance** を選び、確認画面が出たら確定します。\n"
+        "2. `RUNNING` になったら、Colabで「Neo4jに接続する」コードセルを実行します。"
+        "すでに `RUNNING` なら、そのまま接続できます。\n"
+        "3. `Neo4j connected` が表示されたら、「データを取り込む」から続けます。\n\n"
+        "[Aura公式の再開手順](https://neo4j.com/docs/aura/managing-instances/instance-actions/#_resume_a_paused_instance)\n\n"
         "接続先は学習用DBにしてください。次の取り込みセルはノード・制約を追加します。"
         "既存データの削除は行いません。"),
         code('''from getpass import getpass
@@ -107,7 +115,7 @@ def safe_neo4j_error(error):
     if code == "Neo.ClientError.Security.Forbidden":
         return "[PERMISSION] この操作の権限がありません。接続ユーザーの読み書き権限を確認してください。"
     if isinstance(error, (ServiceUnavailable, SessionExpired)):
-        return "[UNREACHABLE] DBに到達できません。Auraでインスタンスの稼働状態を確認し、停止中なら再開してください。稼働中ならConnection URIとネットワークを確認し、再実行してください。"
+        return "[UNREACHABLE] DBに到達できません。Auraでインスタンスの稼働状態を確認し、PAUSEDならDBカードの「… → Resume Instance」を選び、RUNNINGになってから接続セルを再実行してください。稼働中ならConnection URIとネットワークを確認し、再実行してください。"
     if isinstance(error, (ConfigurationError, ValueError)):
         return "[CONFIG] 接続設定を確認してください。NEO4J_URIには管理画面のConnection URIを使用します。Auraコンソールのhttps URLは使えません。"
     return "[NEO4J_OTHER] Neo4jの処理に失敗しました。DBの状態・接続設定・権限・容量を確認してください。生の例外はシークレット保護のため表示しません。"
@@ -220,54 +228,47 @@ print("SQLiteとNeo4jの結果が一致しました。図は直接のつなが�
         md("## 学習メモ\n- なぜTeamSeasonノードを挟むのか：\n"
            "- Cypherで読みやすかった点・難しかった点：\n- 好きな選手で発見したつながり：\n"
            "- Neo4jが適していると考えた処理と、その理由：")])
-    save("03_sql_comparison.ipynb", common("03 — Neo4jとSQLiteの結果・実行時間を比較") + connection() + [
-        md("## 比較の条件\n"
-           "同じ入力・年度・定義・重複除去・ソートを使います。まず結果の一致を確認します。"
-           "その後、ウォームアップ1回を除き5回測定。全件取得までの壁時計時間です。\n\n"
-           "**Colab内のインメモリSQLiteとリモートNeo4jの比較には通信時間・マシン差が含まれます。**"
-           "DBエンジン単体の優劣を示すベンチマークではありません。"
-           "キャッシュは初期化せず、読み取りの繰り返しを測ります。"),
-        code('''import platform
-import importlib.metadata
-db = sqlite_database(data)
+    save("03_sql_comparison.ipynb", common("03 — SQLとCypherの書き方・検索結果を比較") + connection() + [
+        md("## 1段階：同じ球団・年度の選手を探す\n"
+           "SQLでは `memberships` を球団・年度IDで自己結合します。"
+           "Cypherでは、起点の選手から球団・年度ノードを挟んで別の選手へたどるパターンを `MATCH` で書きます。"
+           "どちらも本人を除き、`DISTINCT` で選手の重複を取り除きます。"),
+        code('print("SQLite（SQL）:", SQL_DIRECT)\nprint("Neo4j（Cypher）:", CYPHER_DIRECT)'),
+        md("## 2段階：チームメートを1人介してつながる選手を探す\n"
+           "SQLでは `WITH direct AS (...)` で直接つながる選手を求め、その選手の出場記録をさらに `JOIN` します。"
+           "Cypherでは、選手と球団・年度のパターンをもう1組つなげます。"
+           "どちらも本人と直接つながる選手を除き、最短で2段階の選手を返します。"),
+        code('print("SQLite（SQL）:", SQL_TWO_HOP)\nprint("Neo4j（Cypher）:", CYPHER_TWO_HOP)'),
+        md("## 選手IDの一覧が一致するか確認する\n"
+           "同じ前処理済みデータと起点の選手を使い、1段階・2段階それぞれで、"
+           "並べ替え済みの選手ID一覧を全件比較します。件数と一致判定を表にします。"),
+        code('''from contextlib import closing
+
 results = []
 try:
-    for hops in (1, 2):
-        sql_call = lambda: sql_query(db, PLAYER_ID, hops)
-        neo_call = lambda: graph_query(driver, data, PLAYER_ID, hops, DATABASE)
-        if sql_call() != neo_call():
-            raise ValueError("Result mismatch")
-        for engine, call in [("SQLite (local memory)", sql_call), ("Neo4j (remote)", neo_call)]:
-            results.append({"engine": engine, "hops": hops, **measure(call)})
-    records, _, _ = driver.execute_query("CALL dbms.components() YIELD name, versions RETURN name, versions", database_=DATABASE)
-    server_versions = [dict(r) for r in records]
-except Exception:
-    raise RuntimeError("比較を中止しました。検索結果の一致、接続、DBの稼働状態を確認してください。") from None
+    with closing(sqlite_database(data)) as db:
+        for hops in (1, 2):
+            sql_ids = sql_query(db, PLAYER_ID, hops=hops)
+            cypher_ids = graph_query(driver, data, PLAYER_ID, hops=hops, database=DATABASE)
+            results.append({
+                "段階": hops,
+                "SQLiteの件数": len(sql_ids),
+                "Neo4jの件数": len(cypher_ids),
+                "選手ID一覧が一致": sql_ids == cypher_ids,
+            })
+except Exception as error:
+    raise RuntimeError(safe_neo4j_error(error)) from None
 finally:
-    db.close()
     driver.close()
+
 report = pd.DataFrame(results)
 display(report)
-Path("outputs").mkdir(exist_ok=True)
-report.to_csv("outputs/comparison.csv", index=False)
-environment = {
-    "python": platform.python_version(), "platform": platform.platform(),
-    "sqlite": sqlite3.sqlite_version,
-    "packages": {p: importlib.metadata.version(p) for p in ["pandas", "neo4j", "requests"]},
-    "neo4j_server": server_versions, "dataset_id": data.dataset_id,
-    "years": [START_YEAR, END_YEAR], "player_id": PLAYER_ID,
-    "source_manifest": manifest,
-    "measurement": "warm-up 1, repeats 5, wall-clock including network and materialization; caches not cleared",
-}
-Path("outputs/environment.json").write_text(json.dumps(environment, indent=2))''', "needs_neo4j"),
-        md("## クエリを並べて読む"),
-        code("print(SQL_DIRECT)\nprint(CYPHER_DIRECT)\nprint(SQL_TWO_HOP)\nprint(CYPHER_TWO_HOP)"),
-        md("## 考察（測定してから記入）\n"
-           "- 結果が一致したか：\n- 1段階と2段階で何が変わったか：\n"
-           "- 書き方の理解しやすさ：\n- 通信やキャッシュの影響：\n"
-           "- この条件からは結論できないこと：\n- 次に比較したい条件：\n\n"
-           "次の実験は年度範囲を縮める、選手を変更する、同じホスト上のDB同士で測る、など。"
-           "実行環境の情報は `outputs/environment.json` に残ります。")])
+if not report["選手ID一覧が一致"].all():
+    raise RuntimeError("選手ID一覧が一致しません。表で該当する段階を確認してください。")''', "needs_neo4j"),
+        md("## 考察\n"
+           "- SQLの結合条件とCypherのパターンはどう対応するか。\n"
+           "- 2段階の検索で、直接つながる選手をどう除いているか。")])
+
 
 
 if __name__ == "__main__":

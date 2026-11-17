@@ -124,3 +124,18 @@ def test_notebooks_valid_and_match_tested_module():
             if cell.cell_type == "code":
                 compile(cell.source, str(path), "exec")
                 assert cell.outputs == []
+
+
+def test_graph_prioritizes_only_actual_peers(tables):
+    from baseball_graph import draw_neighborhood
+    import matplotlib.pyplot as plt
+    data = prepare(tables, 2022, 2023)
+    fig = draw_neighborhood(data, 'B', max_players=1,
+                            preferred_player_ids=['D', 'missing', 'C', 'C'])
+    labels = {text.get_text() for text in fig.axes[0].texts}
+    assert 'C Player' in labels
+    assert 'B Player' in labels
+    assert 'A Player' not in labels
+    assert 'D Player' not in labels
+    assert '1 of 2 peers shown' in fig.axes[0].get_title()
+    plt.close(fig)

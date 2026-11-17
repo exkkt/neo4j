@@ -285,7 +285,10 @@ def measure(call, repeats=5):
             "max_ms": max(values), "repeats": repeats, "result_count": len(expected)}
 
 
-def draw_neighborhood(data, player_id, max_players=20):
+FEATURED_PLAYER_IDS = ("troutmi01", "bettsmo01", "freemfr01")
+
+
+def draw_neighborhood(data, player_id, max_players=20, preferred_player_ids=None):
     """A bounded, deterministic two-mode view; labels explain truncated display."""
     import matplotlib.pyplot as plt
     import networkx as nx
@@ -294,13 +297,22 @@ def draw_neighborhood(data, player_id, max_players=20):
     db = sqlite_database(data)
     peers = sql_query(db, player_id)
     db.close()
-    visible = {player_id, *peers[:max_players]}
+    if max_players < 0:
+        raise ValueError("max_playersは0以上にしてください。")
+    preferred = FEATURED_PLAYER_IDS if preferred_player_ids is None else preferred_player_ids
+    peer_set = set(peers)
+    # Editorial choices affect only the picture, never query results or counts.
+    ordered = list(dict.fromkeys(p for p in preferred if p in peer_set))
+    ordered.extend(p for p in peers if p not in ordered)
+    shown = ordered[:max_players]
+    visible = {player_id, *shown}
     origin_seasons = set(data.memberships.loc[data.memberships.playerID.eq(player_id), "season_id"])
     rows = data.memberships.loc[data.memberships.playerID.isin(visible) & data.memberships.season_id.isin(origin_seasons)]
     graph = nx.Graph()
     names = dict(zip(data.players.playerID, data.players.name))
     seasons = data.seasons.set_index("season_id")
-    labels = {}
+    graph.add_node("p:" + player_id)
+    labels = {"p:" + player_id: names[player_id]}
     for row in rows.itertuples(index=False):
         p, s = "p:" + row.playerID, "s:" + row.season_id
         graph.add_edge(p, s)
@@ -310,7 +322,7 @@ def draw_neighborhood(data, player_id, max_players=20):
     nx.draw_networkx(graph, nx.spring_layout(graph, seed=42), ax=ax, labels=labels,
         node_color=["#e8ad42" if n == "p:" + player_id else "#9bbce3" if n.startswith("p:") else "#cadaca" for n in graph],
         font_size=8, node_size=600, edge_color="#b1b7c2")
-    ax.set_title(f"{names[player_id]}: {min(max_players, len(peers))} of {len(peers)} peers shown (ID order)")
+    ax.set_title(f"{names[player_id]}: {len(shown)} of {len(peers)} peers shown (selected players first)")
     ax.axis("off")
     fig.tight_layout()
     return fig

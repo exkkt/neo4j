@@ -201,8 +201,8 @@ print("Appearances years:", pd.to_numeric(tables["Appearances"].yearID).agg(["mi
              "print('Peers:', len(peer_ids))\n"
              "display(data.players.loc[data.players.playerID.isin(peer_ids)].head(30))\n"
              "db.close()"),
-        md("図はトラウト・ベッツ・フリーマンを優先し、残りを選手ID順に最大20人まで表示します。"
-           "対象年度に起点と同じ球団で出場した選手だけが対象です。人気順のランキングではありません。"),
+        md("図は直接つながる選手を最大20人まで表示します。"
+           "対象年度に起点と同じ球団で出場した選手だけが対象です。"),
         code("fig = draw_neighborhood(data, PLAYER_ID, preferred_player_ids=FEATURED_PLAYER_IDS)\n"
              "Path('outputs').mkdir(exist_ok=True)\n"
              "fig.savefig('outputs/neighborhood.png', dpi=150)\n"
@@ -229,8 +229,8 @@ display(data.players.loc[data.players.playerID.isin(peer_ids)].head(30))
 display(data.players.loc[data.players.playerID.isin(second_ids)].head(30))''', "needs_neo4j"),
         md("2段階は「最短で2人分のつながり」。起点本人と直接つながる選手を除きます。"
            "関係は時間の順番を制約せずたどるので、情報伝達・因果関係は表しません。"),
-        md("図はトラウト・ベッツ・フリーマンを優先し、残りを選手ID順に最大20人まで表示します。"
-           "対象年度に起点と同じ球団で出場した選手だけが対象です。人気順のランキングではありません。"),
+        md("図は直接つながる選手を最大20人まで表示します。"
+           "対象年度に起点と同じ球団で出場した選手だけが対象です。"),
         code('''db = sqlite_database(data)
 assert peer_ids == sql_query(db, PLAYER_ID)
 assert second_ids == sql_query(db, PLAYER_ID, hops=2)
